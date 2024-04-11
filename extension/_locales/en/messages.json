@@ -1,11 +1,11 @@
 {
   "extension_name": {
-    "message": "Piper Text-to-Speech Voices"
+    "message": "Whisker: Your AI transcriber"
   },
   "extension_short_name": {
-    "message": "Piper TTS"
+    "message": "Whisker"
   },
   "extension_description": {
-    "message": "High quality neural text-to-speech voices from Piper, synthesized locally in your browser"
+    "message": "Why type when you can dictate? Whisker is your personal transcriber, works offline, no subscriptions, totally free!"
   }
 }

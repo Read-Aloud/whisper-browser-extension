@@ -1,36 +1,22 @@
 
-let piperService
-let speechId
+let whisperService
 
 
-//handle messages from piper-service
+//handle messages from whisper-service
 
-const domDispatcher = makeDispatcher("piper-host", {
-  advertiseVoices({voices}, sender) {
-    chrome.ttsEngine.updateVoices(voices)
-    piperService = sender
-    notifyServiceWorker("piperServiceReady")
+const domDispatcher = makeDispatcher("whisper-host", {
+  onReady(args, sender) {
+    whisperService = sender
+    chrome.runtime.sendMessage({to: "service-worker", type: "notification", method: "onReady"})
   },
-  onStart(args) {
-    notifyServiceWorker("onStart", {...args, speechId})
-  },
-  onSentence(args) {
-    notifyServiceWorker("onSentence", {...args, speechId})
-  },
-  onEnd(args) {
-    notifyServiceWorker("onEnd", {...args, speechId})
-  },
-  onError(args) {
-    notifyServiceWorker("onError", {...args, speechId})
-  }
 })
 
-window.addEventListener("message", event => {
+addEventListener("message", event => {
   const send = message => event.source.postMessage(message, {targetOrigin: event.origin})
   const sender = {
     sendRequest(method, args) {
       const id = String(Math.random())
-      send({to: "piper-service", type: "request", id, method, args})
+      send({to: "whisper-service", type: "request", id, method, args})
       return domDispatcher.waitForResponse(id)
     }
   }
@@ -40,7 +26,7 @@ window.addEventListener("message", event => {
 
 //handle messages from extension service worker
 
-const extDispatcher = makeDispatcher("piper-host", {
+const extDispatcher = makeDispatcher("whisper-host", {
   async areYouThere({requestFocus}) {
     if (requestFocus) {
       const tab = await chrome.tabs.getCurrent()
@@ -51,20 +37,10 @@ const extDispatcher = makeDispatcher("piper-host", {
     }
     return true
   },
-  speak(args) {
-    if (!piperService) throw new Error("No service")
-    speechId = args.speechId
-    return piperService.sendRequest("speak", args)
+  transcribe({tabId}) {
+    if (!whisperService) throw new Error("No service")
+    control.next(tabId)
   },
-  pause(args) {
-    return piperService.sendRequest("pause", args)
-  },
-  resume(args) {
-    return piperService.sendRequest("resume", args)
-  },
-  stop(args) {
-    return piperService.sendRequest("stop", args)
-  }
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -80,11 +56,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })
 })
 
-function notifyServiceWorker(method, args) {
-  chrome.runtime.sendMessage({
-    to: "service-worker",
-    type: "notification",
-    method,
-    args
-  })
-}
+
+//transcribe state machine
+
+const control = new rxjs.Subject()
+
+control
+  .pipe(
+    rxjs.scan((currentTranscription, tabId) => {
+      if (!currentTranscription) {
+        return makeTranscription(tabId)
+      }
+      else {
+        currentTranscription.end()
+        return null
+      }
+    }, null)
+  )
+  .subscribe()

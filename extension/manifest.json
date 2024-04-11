@@ -8,13 +8,14 @@
   "default_locale": "en",
 
   "action": {
-    "default_icon": "img/icon.png"
+    "default_icon": "img/icon.png",
+    "default_popup": "popup.html"
   },
   "icons": {
     "128": "img/icon.png"
   },
   "permissions": [
-    "ttsEngine"
+    "scripting"
   ],
   "cross_origin_opener_policy": {
     "value": "same-origin"
@@ -24,5 +25,18 @@
   },
   "background": {
     "service_worker": "service-worker.js"
+  },
+  "sandbox": {
+    "pages": [
+      "sandbox.html"
+    ]
+  },
+  "commands": {
+    "transcribe": {
+      "suggested_key": {
+        "default": "Alt+Q"
+      },
+      "description": "Start/stop transcribing"
+    }
   }
 }
