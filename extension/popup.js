@@ -6,6 +6,11 @@ document.addEventListener("DOMContentLoaded", function() {
       document.getElementById("current-shortcut-key").innerText = shortcut
     })
 
+  document.getElementById("test-microphone")
+    .addEventListener("click", function() {
+      location.href = "microphone-test.html"
+    })
+
   document.getElementById("edit-shortcut-key")
     .addEventListener("click", function() {
       chrome.tabs.create({url: "chrome://extensions/configureCommands"})

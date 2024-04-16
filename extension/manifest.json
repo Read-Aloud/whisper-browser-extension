@@ -24,11 +24,11 @@
     "value": "require-corp"
   },
   "background": {
-    "service_worker": "service-worker.js"
+    "service_worker": "extension-service-worker.js"
   },
   "sandbox": {
     "pages": [
-      "sandbox.html"
+      "whisper-worker.html"
     ]
   },
   "commands": {
@@ -36,7 +36,7 @@
       "suggested_key": {
         "default": "Alt+Q"
       },
-      "description": "Start/stop transcribing"
+      "description": "Start/Stop transcribing"
     }
   }
 }

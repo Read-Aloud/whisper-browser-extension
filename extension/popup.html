@@ -15,14 +15,28 @@
         text-decoration: underline;
       }
       .container {
-        min-width: 20em;
+        min-width: 20rem;
+        padding: 0 .5rem;
+      }
+      .actions {
+        margin-bottom: 1.1rem;
+        display: flex;
+        flex-flow: column;
+        align-items: start;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <p>Click on a textbox, then press <span id="current-shortcut-key"></span> to start transcription. Press it again to stop.</p>
-      <p>To change the shortcut key, click <span id="edit-shortcut-key" class="link">here</span>.</p>
+      <h3>Whisperly: Your AI Transcriber</h3>
+      <p>
+        Click on a textbox, then press <span id="current-shortcut-key"></span> and begin speaking.
+        Once you're done, press the key again to transcribe.
+      </p>
+      <p class="actions">
+        <span id="test-microphone" class="link">Test microphone</span>
+        <span id="edit-shortcut-key" class="link">Edit shortcut keys</span>
+      </p>
     </div>
   </body>
 </html>
