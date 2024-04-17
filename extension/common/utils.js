@@ -3,6 +3,11 @@ function immediate(func) {
   return func()
 }
 
+function lazy(func) {
+  let value
+  return () => value || (value = func())
+}
+
 function makeSerializableError(err) {
   if (err instanceof Error || err instanceof DOMException) {
     return {
@@ -48,9 +53,17 @@ function makeMessageDispatcher({ from, to, requestHandlers }) {
   }
   function handleRequest(req, sender, sendResponse) {
     if (requestHandlers[req.method]) {
+      console.debug("RECV", req)
       Promise.resolve()
         .then(() => requestHandlers[req.method](req.args || {}, sender))
-        .then(result => sendResponse({ from: req.to, to: req.from, type: "response", id: req.id, result, error: undefined }), error => sendResponse({ from: req.to, to: req.from, type: "response", id: req.id, result: undefined, error }));
+        .then(
+          result => ({ from: req.to, to: req.from, type: "response", id: req.id, result, error: undefined }),
+          error => ({ from: req.to, to: req.from, type: "response", id: req.id, result: undefined, error })
+        )
+        .then(res => {
+          console.debug("SEND", res)
+          sendResponse(res)
+        });
       //let caller know that sendResponse will be called asynchronously
       return true;
     }
@@ -60,6 +73,7 @@ function makeMessageDispatcher({ from, to, requestHandlers }) {
   }
   function handleNotification(ntf, sender) {
     if (requestHandlers[ntf.method]) {
+      console.debug("RECV", ntf)
       Promise.resolve()
         .then(() => requestHandlers[ntf.method](ntf.args || {}, sender))
         .catch(error => console.error("Failed to handle notification", ntf, error));
@@ -69,6 +83,7 @@ function makeMessageDispatcher({ from, to, requestHandlers }) {
     }
   }
   function handleResponse(res) {
+    console.debug("RECV", res)
     const pending = pendingRequests.get(res.id);
     if (pending) {
       pendingRequests.delete(res.id);

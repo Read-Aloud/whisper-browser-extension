@@ -15,6 +15,7 @@
     "128": "img/icon.png"
   },
   "permissions": [
+    "activeTab",
     "scripting"
   ],
   "cross_origin_opener_policy": {
@@ -25,11 +26,6 @@
   },
   "background": {
     "service_worker": "extension-service-worker.js"
-  },
-  "sandbox": {
-    "pages": [
-      "whisper-worker.html"
-    ]
   },
   "commands": {
     "transcribe": {

@@ -67,7 +67,7 @@ immediate(() => {
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command == "transcribe") {
     whisperHost.ready({requestFocus: false})
-      .then(() => whisperHost.sendRequest("transcribe", {tabId: tab ? tab.id : null}))
+      .then(() => whisperHost.sendRequest("transcribe", {tabId: tab && tab.id != chrome.tabs.TAB_ID_NONE ? tab.id : null}))
       .catch(console.error)
   }
 })

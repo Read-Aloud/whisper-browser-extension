@@ -3,7 +3,7 @@ const whisperWorkerPromise = new Promise((fulfill, reject) => {
   const transcriptionEventSubject = new rxjs.Subject()
 
   const dispatcher = makeMessageDispatcher({
-    from: "whisper-worker",
+    from: "whisper-service",
     to: "whisper-host",
     requestHandlers: {
       onReady(args, sender) {
@@ -24,13 +24,13 @@ const whisperWorkerPromise = new Promise((fulfill, reject) => {
       sender: {
         sendRequest(method, args) {
           const id = String(Math.random())
-          const req = {from: "whisper-host", to: "whisper-worker", type: "request", id, method, args}
-          event.source.postMessage(req, {targetOrigin: event.origin})
+          const req = {from: "whisper-host", to: "whisper-service", type: "request", id, method, args}
+          event.source.postMessage(req, "*")
           return dispatcher.waitForResponse(id)
         }
       },
       sendResponse(res) {
-        event.source.postMessage(res, {targetOrigin: event.origin})
+        event.source.postMessage(res, "*")
       }
     })
   })
@@ -93,6 +93,7 @@ const transcribeStateMachine = immediate(() => {
       next(tabId) {
         if (tabId) {
           currentTranscription = makeTranscription(tabId)
+          currentTranscription.finishPromise.finally(() => sm.trigger("onFinish"))
           return "TRANSCRIBING"
         }
       }
@@ -100,8 +101,11 @@ const transcribeStateMachine = immediate(() => {
     TRANSCRIBING: {
       next() {
         currentTranscription.finish()
-          .then(() => sm.trigger("onFinish"))
         return "FINISHING"
+      },
+      onFinish() {
+        currentTranscription = null
+        return "IDLE"
       }
     },
     FINISHING: {
@@ -130,43 +134,42 @@ const transcribeStateMachine = immediate(() => {
 
 function makeTranscription(tabId) {
   const control = new rxjs.BehaviorSubject("go")
-  const donePromise = immediate(async () => {
-    try {
-      const contentScript = await makeContentScript(tabId)
-      if (control.getValue() == "finish") return;
+  return {
+    finishPromise: immediate(async () => {
       try {
-        const whisperWorker = await whisperWorkerPromise
+        const contentScript = await makeContentScript(tabId)
         if (control.getValue() == "finish") return;
-        await contentScript.sendRequest("prepareToTranscribe")
-        if (control.getValue() == "finish") return;
-        const transcriptionEventSubscription = whisperWorker.transcriptionEventObservable
-          .subscribe(event => {
-            contentScript.notify("onTranscribeEvent", event)
-              .catch(console.error)
-          })
         try {
-          await whisperWorker.sendRequest("startTranscription")
-          await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "finish")))
-          await whisperWorker.sendRequest("finishTranscription")
+          const whisperWorker = await whisperWorkerPromise
+          if (control.getValue() == "finish") return;
+          await contentScript.sendRequest("prepareToTranscribe")
+          if (control.getValue() == "finish") return;
+          const transcriptionEventSubscription = whisperWorker.transcriptionEventObservable
+            .subscribe(event => {
+              contentScript.notify("onTranscribeEvent", event)
+                .catch(console.error)
+            })
+          try {
+            await whisperWorker.sendRequest("startTranscription")
+            await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "finish")))
+            await whisperWorker.sendRequest("finishTranscription")
+          }
+          finally {
+            transcriptionEventSubscription.unsubscribe()
+          }
         }
-        finally {
-          transcriptionEventSubscription.unsubscribe()
+        catch (err) {
+          await contentScript.notify("onTranscribeEvent", {type: "error", error: makeSerializableError(err)})
         }
       }
       catch (err) {
-        await contentScript.notify("onTranscribeEvent", {type: "error", error: makeSerializableError(err)})
+        console.error(err)
       }
-    }
-    catch (err) {
-      console.error(err)
-    }
-  })
-  return {
+    }),
     finish() {
+      control.next("finish")
       chrome.tabs.update(tabId, {active: true})
         .catch(console.error)
-      control.next("finish")
-      return donePromise
     }
   }
 }
@@ -183,7 +186,9 @@ const contentScriptManager = immediate(() => {
     to: "whisper-host",
     requestHandlers: {
       onReady(args, sender) {
-        promises.get(sender.tab.id)?.fulfill()
+        const promise = promises.get(sender.tab.id)
+        if (promise) promise.fulfill()
+        else console.error("Unexpected")
       }
     }
   })
