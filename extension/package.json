@@ -1,5 +1,0 @@
-{
-  "scripts": {
-    "package": "zip -r -u build/package.zip _locales img *.html *.js manifest.json || true"
-  }
-}

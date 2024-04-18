@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "package": "cd extension && zip -r -u ../build/extension.zip * || true"
+  }
+}
