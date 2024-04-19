@@ -8,18 +8,12 @@
       body {
         margin: 0;            /* Reset default margin */
       }
-      iframe {
-        display: block;       /* iframes are inline by default */
-        border: none;         /* Reset default border */
-        height: 100vh;        /* Viewport-relative units */
-        width: 100vw;
-      }
     </style>
     <script src="common/rxjs.umd.min.js"></script>
     <script src="common/utils.js"></script>
     <script src="whisper-host.js"></script>
   </head>
   <body>
-    <iframe src="http://localhost:8080/" allow="cross-origin-isolated; microphone"></iframe>
+    <iframe src="https://ttstool.com/onnx/index.html" allow="cross-origin-isolated" style="display: none"></iframe>
   </body>
 </html>

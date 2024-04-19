@@ -1,19 +1,13 @@
 
-const whisperWorkerPromise = new Promise((fulfill, reject) => {
-  const transcriptionEventSubject = new rxjs.Subject()
+//inference service
 
+const inferenceServicePromise = new Promise((fulfill, reject) => {
   const dispatcher = makeMessageDispatcher({
-    from: "whisper-service",
-    to: "whisper-host",
+    from: "inference-service",
+    to: "inference-host",
     requestHandlers: {
       onReady(args, sender) {
-        fulfill({
-          sendRequest: sender.sendRequest,
-          transcriptionEventObservable: transcriptionEventSubject.asObservable()
-        })
-      },
-      onTranscriptionEvent(event) {
-        transcriptionEventSubject.next(event)
+        fulfill(sender)
       }
     }
   })
@@ -22,19 +16,48 @@ const whisperWorkerPromise = new Promise((fulfill, reject) => {
     dispatcher.dispatch({
       message: event.data,
       sender: {
-        sendRequest(method, args) {
+        sendRequest(method, args, transfer) {
           const id = String(Math.random())
-          const req = {from: "whisper-host", to: "whisper-service", type: "request", id, method, args}
-          event.source.postMessage(req, "*")
+          const req = {
+            from: "inference-host",
+            to: "inference-service",
+            type: "request",
+            id, method, args
+          }
+          event.source.postMessage(req, {targetOrigin: event.origin, transfer})
           return dispatcher.waitForResponse(id)
         }
       },
       sendResponse(res) {
-        event.source.postMessage(res, "*")
+        event.source.postMessage(res, {targetOrigin: event.origin})
       }
     })
   })
 })
+
+const inferenceSessionPromise = inferenceServicePromise
+  .then(async service => {
+    const sessionId = await service.sendRequest("makeInferenceSession", {
+      model: chrome.runtime.getURL("model/whisper_cpu_int8_cpu-cpu_model.onnx")
+    })
+    return {
+      async infer({pcmData}) {
+        const feeds = {
+          "audio_pcm": {data: pcmData, dims: [1, pcmData.length]},
+          "min_length": {data: new Int32Array([1]), dims: [1]},
+          "max_length": {data: new Int32Array([448]), dims: [1]},
+          "num_beams": {data: new Int32Array([2]), dims: [1]},
+          "num_return_sequences": {data: new Int32Array([1]), dims: [1]},
+          "length_penalty": {data: new Float32Array([1]), dims: [1]},
+          "repetition_penalty": {data: new Float32Array([1]), dims: [1]},
+        }
+        const transfer = Object.values(feeds)
+          .map(tensor => tensor.data.buffer)
+        const [str] = await service.sendRequest("infer", {sessionId, feeds, outputNames: ["str"]}, transfer)
+        return str.data[0]
+      }
+    }
+  })
 
 
 
@@ -139,27 +162,24 @@ function makeTranscription(tabId) {
       try {
         const contentScript = await makeContentScript(tabId)
         if (control.getValue() == "finish") return;
+        const notifyEvent = function(event) {
+          contentScript.notify("onTranscribeEvent", event)
+            .catch(console.error)
+        }
         try {
-          const whisperWorker = await whisperWorkerPromise
-          if (control.getValue() == "finish") return;
+          notifyEvent({type: "loading"})
           await contentScript.sendRequest("prepareToTranscribe")
-          if (control.getValue() == "finish") return;
-          const transcriptionEventSubscription = whisperWorker.transcriptionEventObservable
-            .subscribe(event => {
-              contentScript.notify("onTranscribeEvent", event)
-                .catch(console.error)
-            })
-          try {
-            await whisperWorker.sendRequest("startTranscription")
-            await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "finish")))
-            await whisperWorker.sendRequest("finishTranscription")
-          }
-          finally {
-            transcriptionEventSubscription.unsubscribe()
-          }
+          const recording = await startRecording()
+          notifyEvent({type: "recording"})
+          await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "finish")))
+          const pcmData = await recording.stop()
+          notifyEvent({type: "transcribing"})
+          const inferenceSession = await inferenceSessionPromise
+          const text = await inferenceSession.infer({pcmData})
+          notifyEvent({type: "transcribed", text})
         }
         catch (err) {
-          await contentScript.notify("onTranscribeEvent", {type: "error", error: makeSerializableError(err)})
+          notifyEvent({type: "error", error: makeSerializableError(err)})
         }
       }
       catch (err) {
@@ -253,5 +273,47 @@ async function makeContentScript(tabId) {
   return {
     sendRequest,
     notify
+  }
+}
+
+
+
+//recorder
+
+const getAudioCtx = lazy(() => new AudioContext({sampleRate: 16000}))
+
+async function startRecording() {
+  const switcher = await switchToMyTab(3000)
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true})
+  await switcher.restore()
+  return {
+    async stop() {
+      for (const track of stream.getTracks()) track.stop()
+      const buffer = await fetch("model/narration.mp3").then(res => res.arrayBuffer())
+      const audioBuffer = await getAudioCtx().decodeAudioData(buffer)
+      return audioBuffer.getChannelData(0)
+    }
+  }
+}
+
+async function switchToMyTab(delay) {
+  const [[activeTab], myTab] = await Promise.all([
+    chrome.tabs.query({active: true, lastFocusedWindow: true}),
+    chrome.tabs.getCurrent()
+  ])
+  const switchTo = tab => Promise.all([
+    chrome.tabs.update(tab.id, {active: true}),
+    chrome.windows.update(tab.windowId, {focused: true})
+  ])
+  let switchedPromise
+  const timer = setTimeout(() => switchedPromise = switchTo(myTab), delay)
+  return {
+    async restore() {
+      clearTimeout(timer)
+      if (switchedPromise && activeTab) {
+        await switchedPromise
+        await switchTo(activeTab)
+      }
+    }
   }
 }
