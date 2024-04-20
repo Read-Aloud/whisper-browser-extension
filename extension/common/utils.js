@@ -125,3 +125,28 @@ function makeStateMachine(states) {
     }
   }
 }
+
+function switchToTab(tab) {
+  return Promise.all([
+    chrome.tabs.update(tab.id, {active: true}),
+    chrome.windows.update(tab.windowId, {focused: true})
+  ])
+}
+
+async function switchToMyTab(delay) {
+  const [[activeTab], myTab] = await Promise.all([
+    chrome.tabs.query({active: true, lastFocusedWindow: true}),
+    chrome.tabs.getCurrent()
+  ])
+  let switchedPromise
+  const timer = setTimeout(() => switchedPromise = switchToTab(myTab), delay)
+  return {
+    async restore() {
+      clearTimeout(timer)
+      if (switchedPromise && activeTab) {
+        await switchedPromise
+        await switchToTab(activeTab)
+      }
+    }
+  }
+}

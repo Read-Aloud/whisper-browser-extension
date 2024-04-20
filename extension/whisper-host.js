@@ -172,7 +172,7 @@ function makeTranscription(tabId) {
           const recording = await startRecording()
           notifyEvent({type: "recording"})
           await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "finish")))
-          const pcmData = await recording.stop()
+          const pcmData = await recording.finish()
           notifyEvent({type: "transcribing"})
           const inferenceSession = await inferenceSessionPromise
           const text = await inferenceSession.infer({pcmData})
@@ -280,40 +280,15 @@ async function makeContentScript(tabId) {
 
 //recorder
 
-const getAudioCtx = lazy(() => new AudioContext({sampleRate: 16000}))
+const audioCapture = makeAudioCapture()
 
 async function startRecording() {
   const switcher = await switchToMyTab(3000)
-  const stream = await navigator.mediaDevices.getUserMedia({audio: true})
+  const capture = await audioCapture.start()
   await switcher.restore()
   return {
-    async stop() {
-      for (const track of stream.getTracks()) track.stop()
-      const buffer = await fetch("model/narration.mp3").then(res => res.arrayBuffer())
-      const audioBuffer = await getAudioCtx().decodeAudioData(buffer)
-      return audioBuffer.getChannelData(0)
-    }
-  }
-}
-
-async function switchToMyTab(delay) {
-  const [[activeTab], myTab] = await Promise.all([
-    chrome.tabs.query({active: true, lastFocusedWindow: true}),
-    chrome.tabs.getCurrent()
-  ])
-  const switchTo = tab => Promise.all([
-    chrome.tabs.update(tab.id, {active: true}),
-    chrome.windows.update(tab.windowId, {focused: true})
-  ])
-  let switchedPromise
-  const timer = setTimeout(() => switchedPromise = switchTo(myTab), delay)
-  return {
-    async restore() {
-      clearTimeout(timer)
-      if (switchedPromise && activeTab) {
-        await switchedPromise
-        await switchTo(activeTab)
-      }
+    finish() {
+      return capture.finish()
     }
   }
 }
