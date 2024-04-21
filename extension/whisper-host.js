@@ -280,11 +280,11 @@ async function makeContentScript(tabId) {
 
 //recorder
 
-const audioCapture = makeAudioCapture()
+const getAudioCapture = lazy(makeAudioCapture)
 
 async function startRecording() {
   const switcher = await switchToMyTab(3000)
-  const capture = await audioCapture.start()
+  const capture = await getAudioCapture().start()
   await switcher.restore()
   return {
     finish() {

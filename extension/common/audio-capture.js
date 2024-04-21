@@ -1,19 +1,15 @@
 
 function makeAudioCapture() {
-  const getContext = lazy(() => new AudioContext({sampleRate: 16000}))
-
-  const getCaptureNode = lazy(async () => {
-    const context = getContext()
-    await context.audioWorklet.addModule("audio-capture-processor.js")
-    return new AudioWorkletNode(context, "audio-capture-processor")
-  })
-
-  const sourceNodeObservable = null
+  const context = new AudioContext({sampleRate: 16000})
+  const microphoneProvider = makeMicrophoneProvider(context)
+  const captureNodePromise = context.audioWorklet.addModule("audio-capture-processor.js")
+    .then(() => new AudioWorkletNode(context, "audio-capture-processor"))
 
   return {
     async start() {
-      const sourceNode = await rxjs.firstValueFrom(sourceNodeObservable)
-      const captureNode = await getCaptureNode()
+      const captureNode = await captureNodePromise
+      const source = microphoneProvider.acquire()
+      const sourceNode = await source.promise
       const sessionId = Math.random()
 
       sourceNode.connect(captureNode)
@@ -44,11 +40,68 @@ function makeAudioCapture() {
       })
 
       return {
-        async finish() {
-          sourceNode.disconnect(captureNode)
+        finish() {
           captureNode.port.postMessage({method: "finish"})
+          sourceNode.disconnect(captureNode)
+          source.release()
           return finishPromise
         }
+      }
+    }
+  }
+}
+
+
+
+function makeMicrophoneProvider(audioContext) {
+  const handle = new rxjs.Subject()
+
+  handle
+    .pipe(
+      rxjs.switchScan((mic, req) => {
+        switch (req.method) {
+          case "acquire":
+            if (mic) {
+              req.resolve(mic.promise)
+              return rxjs.EMPTY
+            }
+            else {
+              mic = acquireMicrophone()
+              req.resolve(mic.promise)
+              return rxjs.of(mic)
+            }
+
+          case "release":
+            return rxjs.timer(10000)
+              .pipe(
+                rxjs.tap(() => mic.release()),
+                rxjs.map(() => null)
+              )
+        }
+      }, null)
+    )
+    .subscribe()
+
+  return {
+    acquire() {
+      return {
+        promise: new Promise(resolve => handle.next({method: "acquire", resolve})),
+        release() {
+          handle.next({method: "release"})
+        }
+      }
+    }
+  }
+
+  function acquireMicrophone() {
+    const streamPromise = navigator.mediaDevices.getUserMedia({audio: true})
+    return {
+      promise: streamPromise
+        .then(stream => audioContext.createMediaStreamSource(stream)),
+      release() {
+        streamPromise
+          .then(stream => stream.getTracks().forEach(track => track.stop()))
+          .catch(err => "OK")
       }
     }
   }
