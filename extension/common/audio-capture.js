@@ -1,8 +1,11 @@
 
+const audioCaptureWorkletUrl = document.currentScript.src.replace("audio-capture.js", "audio-capture-processor.js")
+
+
 function makeAudioCapture() {
   const context = new AudioContext({sampleRate: 16000})
   const microphoneProvider = makeMicrophoneProvider(context)
-  const captureNodePromise = context.audioWorklet.addModule("audio-capture-processor.js")
+  const captureNodePromise = context.audioWorklet.addModule(audioCaptureWorkletUrl)
     .then(() => new AudioWorkletNode(context, "audio-capture-processor"))
 
   return {
