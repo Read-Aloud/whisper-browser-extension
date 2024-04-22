@@ -17,16 +17,17 @@ function makeAudioCapture() {
 
       const finishPromise = new Promise(fulfill => {
         const chunks = []
-        new rxjs.Observable(observer => captureNode.port.onmessage = observer.next)
+        new rxjs.Observable(observer => captureNode.port.onmessage = event => observer.next(event.data))
           .pipe(
-            rxjs.filter(event => event.sessionId == sessionId),
-            rxjs.takeWhile(event => event.type != "finish"),
+            rxjs.filter(message => message.sessionId == sessionId),
+            rxjs.takeWhile(message => message.method != "onFinish"),
           )
           .subscribe({
-            next(event) {
-              if (event.type == "chunk") chunks.push(event.chunk)
+            next(message) {
+              if (message.method == "onChunk") chunks.push(message.chunk)
             },
             complete() {
+              //console.debug("Captured chunks", chunks)
               const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
               const result = new Float32Array(totalLength)
               let index = 0
@@ -55,7 +56,6 @@ function makeAudioCapture() {
 
 function makeMicrophoneProvider(audioContext) {
   const handle = new rxjs.Subject()
-
   handle
     .pipe(
       rxjs.switchScan((mic, req) => {

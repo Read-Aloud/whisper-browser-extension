@@ -1,14 +1,19 @@
 
+const chunkSize = 16000
+
+
 class AudioCaptureProcessor extends AudioWorkletProcessor {
-  constructor() {
-    this.port.onmessage = function(message) {
-      if (message.method == "start") {
-        this.session = makeSession(message.sessionId, this.port)
-      }
-      else if (message.method == "finish") {
-        this.session.flush()
-        this.session = null
-      }
+  constructor(options) {
+    super(options)
+    this.port.onmessage = event => this.onMessage(event.data)
+  }
+  onMessage(message) {
+    if (message.method == "start") {
+      this.session = makeSession(message.sessionId, this.port)
+    }
+    else if (message.method == "finish") {
+      this.session.finish()
+      this.session = null
     }
   }
   process(inputs) {
@@ -24,7 +29,6 @@ registerProcessor("audio-capture-processor", AudioCaptureProcessor)
 
 
 function makeSession(sessionId, port) {
-  const chunkSize = 16000
   let chunk = new Float32Array(chunkSize)
   let index = 0
   return {
@@ -34,8 +38,10 @@ function makeSession(sessionId, port) {
         chunk.set(samples.subarray(0, available), index)
         index += available
       }
-      if (index >= chunk.length) {
-        this.flush()
+      if (index == chunk.length) {
+        port.postMessage({sessionId, method: "onChunk", chunk}, [chunk.buffer])
+        chunk = new Float32Array(chunkSize)
+        index = 0
       }
       if (available < samples.length) {
         const remainder = samples.subarray(available)
@@ -43,12 +49,11 @@ function makeSession(sessionId, port) {
         index += remainder.length
       }
     },
-    flush() {
+    finish() {
       if (index) {
-        port.postMessage({sessionId, type: "chunk", chunk}, [chunk.buffer])
-        chunk = new Float32Array(chunkSize)
-        index = 0
+        port.postMessage({sessionId, method: "onChunk", chunk: chunk.subarray(0, index)}, [chunk.buffer])
       }
+      port.postMessage({sessionId, method: "onFinish"})
     }
   }
 }
