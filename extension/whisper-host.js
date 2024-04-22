@@ -247,14 +247,16 @@ const contentScriptManager = immediate(() => {
 })
 
 async function makeContentScript(tabId) {
-  function sendRequest(method, args) {
-    return chrome.tabs.sendMessage(tabId, {
+  async function sendRequest(method, args) {
+    const res = await chrome.tabs.sendMessage(tabId, {
       from: "whisper-host",
       to: "content-script",
       type: "request",
       id: String(Math.random()),
       method, args
     })
+    if (res.error) throw res.error
+    return res.result
   }
   function notify(method, args) {
     return chrome.tabs.sendMessage(tabId, {
