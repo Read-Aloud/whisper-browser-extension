@@ -157,6 +157,7 @@ const transcribeStateMachine = immediate(() => {
 
 function makeTranscription(tabId) {
   const control = new rxjs.BehaviorSubject("go")
+  const keepAliveSub = keepAlive.subscribe()
   return {
     finishPromise: immediate(async () => {
       try {
@@ -184,6 +185,9 @@ function makeTranscription(tabId) {
       }
       catch (err) {
         console.error(err)
+      }
+      finally {
+        keepAliveSub.unsubscribe()
       }
     }),
     finish() {
@@ -294,3 +298,25 @@ async function startRecording() {
     }
   }
 }
+
+
+
+//autoclose
+
+const keepAlive = immediate(() => {
+  let count = 0
+  const startTimer = () => setTimeout(() => window.close(), 5*60*1000)
+  let timer = startTimer()
+  return {
+    subscribe() {
+      count++
+      clearTimeout(timer)
+      return {
+        unsubscribe() {
+          count--
+          if (count == 0) timer = startTimer()
+        }
+      }
+    }
+  }
+})

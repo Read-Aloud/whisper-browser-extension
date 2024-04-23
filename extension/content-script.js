@@ -88,6 +88,7 @@ const getToast = lazy(() => {
     borderRadius: "12px",
     padding: "10px 16px",
     backgroundColor: "#d9f7f7",
+    color: "black",
     fontSize: "16px",
     whiteSpace: "pre-wrap",
     userSelect: "none",
