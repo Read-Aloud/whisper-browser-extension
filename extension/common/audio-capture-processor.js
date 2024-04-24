@@ -1,7 +1,4 @@
 
-const chunkSize = 16000
-
-
 class AudioCaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super(options)
@@ -9,7 +6,7 @@ class AudioCaptureProcessor extends AudioWorkletProcessor {
   }
   onMessage(message) {
     if (message.method == "start") {
-      this.session = makeSession(message.sessionId, this.port)
+      this.session = makeSession(message.sessionId, message.chunkSize, this.port)
     }
     else if (message.method == "finish") {
       this.session.finish()
@@ -28,7 +25,7 @@ registerProcessor("audio-capture-processor", AudioCaptureProcessor)
 
 
 
-function makeSession(sessionId, port) {
+function makeSession(sessionId, chunkSize, port) {
   let chunk = new Float32Array(chunkSize)
   let index = 0
   return {

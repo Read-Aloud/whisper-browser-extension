@@ -170,7 +170,7 @@ function makeTranscription(tabId) {
         try {
           notifyEvent({type: "loading"})
           await contentScript.sendRequest("prepareToTranscribe")
-          const recording = await startRecording()
+          const recording = await getRecorder().start()
           notifyEvent({type: "recording"})
           await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "finish")))
           const pcmData = await recording.finish()
@@ -286,18 +286,43 @@ async function makeContentScript(tabId) {
 
 //recorder
 
-const getAudioCapture = lazy(makeAudioCapture)
+const getRecorder = lazy(() => {
+  const audioContext = new AudioContext({sampleRate: 16000})
+  const audioCapture = makeAudioCapture(audioContext, {chunkSize: 16000})
+  const microphone = makeSharedResource({
+    create() {
+      const switcher = switchToCurrentTab({delay: 3000})
+      return navigator.mediaDevices.getUserMedia({audio: true})
+        .finally(() => switcher.restore())
+    },
+    destroy(resource) {
+      resource
+        .then(stream => stream.getTracks().forEach(track => track.stop()))
+        .catch(err => "ignore")
+    },
+    keepAliveDuration: 10000
+  })
 
-async function startRecording() {
-  const switcher = await switchToMyTab(3000)
-  const capture = await getAudioCapture().start()
-  await switcher.restore()
   return {
-    finish() {
-      return capture.finish()
+    async start() {
+      const handle = microphone.acquire()
+      try {
+        const stream = await handle.resource
+        const session = await audioCapture.start(audioContext.createMediaStreamSource(stream))
+        return {
+          finish() {
+            handle.release()
+            return session.finish()
+          }
+        }
+      }
+      catch (err) {
+        handle.release()
+        throw err
+      }
     }
   }
-}
+})
 
 
 

@@ -126,6 +126,54 @@ function makeStateMachine(states) {
   }
 }
 
+function makeSharedResource({create, destroy, keepAliveDuration}) {
+  let resource
+  let refCount = 0
+  const sm = makeStateMachine({
+    IDLE: {
+      acquire() {
+        resource = create()
+        refCount++
+        return "ACQUIRED"
+      }
+    },
+    ACQUIRED: {
+      acquire() {
+        refCount++
+      },
+      release() {
+        refCount--
+        if (refCount == 0) return "KEEPALIVE"
+      }
+    },
+    KEEPALIVE: {
+      onTransitionIn() {
+        this.timer = setTimeout(() => sm.trigger("onTimeout"), keepAliveDuration)
+      },
+      onTimeout() {
+        destroy(resource)
+        return "IDLE"
+      },
+      acquire() {
+        clearTimeout(this.timer)
+        refCount++
+        return "ACQUIRED"
+      }
+    }
+  })
+  return {
+    acquire() {
+      sm.trigger("acquire")
+      return {
+        resource,
+        release() {
+          sm.trigger("release")
+        }
+      }
+    }
+  }
+}
+
 function switchToTab(tab) {
   return Promise.all([
     chrome.tabs.update(tab.id, {active: true}),
@@ -133,19 +181,19 @@ function switchToTab(tab) {
   ])
 }
 
-async function switchToMyTab(delay) {
-  const [[activeTab], myTab] = await Promise.all([
-    chrome.tabs.query({active: true, lastFocusedWindow: true}),
-    chrome.tabs.getCurrent()
-  ])
+function switchToCurrentTab({delay}) {
+  const prevTabPromise = chrome.tabs.query({active: true, lastFocusedWindow: true}).then(tabs => tabs[0])
   let switchedPromise
-  const timer = setTimeout(() => switchedPromise = switchToTab(myTab), delay)
+  const timer = setTimeout(() => {
+    switchedPromise = chrome.tabs.getCurrent().then(currentTab => switchToTab(currentTab))
+  }, delay)
   return {
-    async restore() {
+    restore() {
       clearTimeout(timer)
-      if (switchedPromise && activeTab) {
-        await switchedPromise
-        await switchToTab(activeTab)
+      if (switchedPromise) {
+        switchedPromise
+          .then(() => prevTabPromise.then(prevTab => prevTab && switchToTab(prevTab)))
+          .catch(console.error)
       }
     }
   }
