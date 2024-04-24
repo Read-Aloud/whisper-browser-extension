@@ -198,3 +198,32 @@ function switchToCurrentTab({delay}) {
     }
   }
 }
+
+function makeSemaphore(count) {
+  const waiters = []
+  return {
+    async runTask(task) {
+      if (count > 0) count--
+      else await new Promise(f => waiters.push(f))
+      try {
+        return await task()
+      }
+      finally {
+        count++
+        while (count > 0 && waiters.length > 0) {
+          count--
+          waiters.shift()()
+        }
+      }
+    }
+  }
+}
+
+function makeExposedPromise() {
+  const exposed = {}
+  exposed.promise = new Promise((fulfill, reject) => {
+    exposed.fulfill = fulfill
+    exposed.reject = reject
+  })
+  return exposed
+}

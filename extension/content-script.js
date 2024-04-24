@@ -1,55 +1,11 @@
 
+//process messages from whisper-host
+
 immediate(() => {
-  let target
-
-  function insertAtCursor(myField, myValue) {
-    if (myField.selectionStart || myField.selectionStart == '0') {
-      var startPos = myField.selectionStart;
-      var endPos = myField.selectionEnd;
-      myField.value = myField.value.substring(0, startPos) + myValue + myField.value.substring(endPos, myField.value.length);
-      myField.selectionStart = myField.selectionEnd = startPos + myValue.length;
-    }
-    else {
-      myField.value += myValue;
-    }
-  }
-
   const dispatcher = makeMessageDispatcher({
     from: "whisper-host",
     to: "content-script",
-    requestHandlers: {
-      areYouThere() {
-        return true
-      },
-      prepareToTranscribe() {
-        target = document.activeElement
-        if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement))
-          throw {name: "NoTargetException", message: "Please select a textbox to receive transcription"}
-      },
-      onTranscribeEvent(event) {
-        const toast = getToast()
-        switch (event.type) {
-          case "loading":
-            toast.show({type: "success", text: "Whisker initializing, please wait..."})
-            break
-          case "recording":
-            toast.show({type: "danger", text: "Listening..."})
-            break
-          case "transcribing":
-            toast.show({type: "success", text: "Transcribing..."})
-            break
-          case "transcribed":
-            toast.hide()
-            insertAtCursor(target, event.text)
-            break
-          case "error":
-            toast.show({type: "warning", text: event.error.message, hide: 5000})
-            break
-          default:
-            toast.show({type: "info", text: JSON.stringify(event, null, 2), hide: 5000})
-        }
-      }
-    }
+    requestHandlers: makeSessionManager()
   })
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -74,7 +30,84 @@ immediate(() => {
 
 
 
+//transcribe session
+
+function makeSessionManager() {
+  const sessions = new Map()
+  let currentSessionId
+
+  return {
+    areYouThere() {
+      return true
+    },
+    prepareToTranscribe({sessionId}) {
+      const session = makeSession()
+      sessions.set(sessionId, session)
+      session.completePromise.finally(() => sessions.delete(sessionId))
+      currentSessionId = sessionId
+      session.prepare()
+    },
+    onTranscribeEvent(event) {
+      const session = sessions.get(event.sessionId)
+      session.onEvent(event, event.sessionId == currentSessionId ? getToast() : {show() {}})
+    }
+  }
+}
+
+
+
+function makeSession() {
+  const target = document.activeElement
+  const completePromise = makeExposedPromise()
+
+  return {
+    completePromise: completePromise.promise,
+    prepare() {
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement))
+        throw {name: "NoTargetException", message: "Please select a textbox to receive transcription"}
+    },
+    onEvent(event, toast) {
+      switch (event.type) {
+        case "loading":
+          toast.show({type: "success", text: "Whisker initializing, please wait..."})
+          break
+        case "recording":
+          toast.show({type: "danger", text: "Listening..."})
+          break
+        case "transcribing":
+          toast.show({type: "success", text: "Transcribing..."})
+          break
+        case "transcribed":
+          toast.show(null)
+          insertAtCursor(target, event.text)
+          completePromise.fulfill()
+          break
+        case "error":
+          toast.show({type: "warning", text: event.error.message, hide: 5000})
+          completePromise.fulfill()
+          break
+        default:
+          toast.show({type: "info", text: JSON.stringify(event, null, 2), hide: 5000})
+      }
+    }
+  }
+}
+
+
+
 //UI
+
+function insertAtCursor(myField, myValue) {
+  if (myField.selectionStart || myField.selectionStart == '0') {
+    var startPos = myField.selectionStart;
+    var endPos = myField.selectionEnd;
+    myField.value = myField.value.substring(0, startPos) + myValue + myField.value.substring(endPos, myField.value.length);
+    myField.selectionStart = myField.selectionEnd = startPos + myValue.length;
+  }
+  else {
+    myField.value += myValue;
+  }
+}
 
 const getToast = lazy(() => {
   const toast = document.createElement("DIV")
@@ -144,9 +177,6 @@ const getToast = lazy(() => {
   return {
     show(opts) {
       control.next(opts)
-    },
-    hide() {
-      control.next(null)
     }
   }
 })

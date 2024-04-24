@@ -40,8 +40,9 @@ const inferenceSessionPromise = inferenceServicePromise
     const sessionId = await service.sendRequest("makeInferenceSession", {
       model: chrome.runtime.getURL("model/whisper_cpu_int8_cpu-cpu_model.onnx")
     })
+    const semaphore = makeSemaphore(1)
     return {
-      async infer({pcmData}) {
+      infer: ({pcmData}) => semaphore.runTask(async () => {
         const feeds = {
           "audio_pcm": {data: pcmData, dims: [1, pcmData.length]},
           "min_length": {data: new Int32Array([1]), dims: [1]},
@@ -55,7 +56,7 @@ const inferenceSessionPromise = inferenceServicePromise
           .map(tensor => tensor.data.buffer)
         const [str] = await service.sendRequest("infer", {sessionId, feeds, outputNames: ["str"]}, transfer)
         return str.data[0]
-      }
+      })
     }
   })
 
@@ -69,13 +70,7 @@ immediate(() => {
     to: "whisper-host",
     requestHandlers: {
       async areYouThere({requestFocus}) {
-        if (requestFocus) {
-          const tab = await chrome.tabs.getCurrent()
-          await Promise.all([
-            chrome.windows.update(tab.windowId, {focused: true}),
-            chrome.tabs.update(tab.id, {active: true})
-          ])
-        }
+        if (requestFocus) await switchToCurrentTab({delay: 0})
         return true
       },
       transcribe({tabId}) {
@@ -115,8 +110,8 @@ const transcribeStateMachine = immediate(() => {
     IDLE: {
       next(tabId) {
         if (tabId) {
-          currentTranscription = makeTranscription(tabId)
-          currentTranscription.finishPromise.finally(() => sm.trigger("onFinish"))
+          const tran = currentTranscription = makeTranscription(tabId)
+          tran.finishPromise.finally(() => tran == currentTranscription && sm.trigger("onFinish"))
           return "TRANSCRIBING"
         }
       }
@@ -124,28 +119,14 @@ const transcribeStateMachine = immediate(() => {
     TRANSCRIBING: {
       next() {
         currentTranscription.finish()
-        return "FINISHING"
+        currentTranscription = null
+        return "IDLE"
       },
       onFinish() {
         currentTranscription = null
         return "IDLE"
       }
     },
-    FINISHING: {
-      onFinish() {
-        if (this.pending) {
-          currentTranscription = makeTranscription(this.pending)
-          return "TRANSCRIBING"
-        }
-        else {
-          currentTranscription = null
-          return "IDLE"
-        }
-      },
-      next(tabId) {
-        this.pending = tabId
-      }
-    }
   })
 
   return sm
@@ -163,13 +144,14 @@ function makeTranscription(tabId) {
       try {
         const contentScript = await makeContentScript(tabId)
         if (control.getValue() == "finish") return;
+        const sessionId = Math.random()
         const notifyEvent = function(event) {
-          contentScript.notify("onTranscribeEvent", event)
+          contentScript.notify("onTranscribeEvent", {sessionId, ...event})
             .catch(console.error)
         }
         try {
+          await contentScript.sendRequest("prepareToTranscribe", {sessionId})
           notifyEvent({type: "loading"})
-          await contentScript.sendRequest("prepareToTranscribe")
           const recording = await getRecorder().start()
           notifyEvent({type: "recording"})
           await rxjs.firstValueFrom(control.pipe(rxjs.filter(x => x == "finish")))
@@ -287,8 +269,8 @@ async function makeContentScript(tabId) {
 //recorder
 
 const getRecorder = lazy(() => {
-  const audioContext = new AudioContext({sampleRate: 16000})
-  const audioCapture = makeAudioCapture(audioContext, {chunkSize: 16000})
+  const context = new AudioContext({sampleRate: 16000})
+  const capture = makeAudioCapture(context, {chunkSize: 16000})
   const microphone = makeSharedResource({
     create() {
       const switcher = switchToCurrentTab({delay: 3000})
@@ -308,7 +290,7 @@ const getRecorder = lazy(() => {
       const handle = microphone.acquire()
       try {
         const stream = await handle.resource
-        const session = await audioCapture.start(audioContext.createMediaStreamSource(stream))
+        const session = await capture.start(context.createMediaStreamSource(stream))
         return {
           finish() {
             handle.release()
