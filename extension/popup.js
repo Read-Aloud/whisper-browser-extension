@@ -8,7 +8,13 @@ document.addEventListener("DOMContentLoaded", function() {
 
   document.getElementById("test-microphone")
     .addEventListener("click", function() {
-      location.href = "microphone-test.html"
+      chrome.runtime.sendMessage({
+        from: "popup",
+        to: "extension-service-worker",
+        type: "notification",
+        method: "testMicrophone"
+      })
+      .catch(console.error)
     })
 
   document.getElementById("edit-shortcut-key")

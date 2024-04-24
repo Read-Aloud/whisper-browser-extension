@@ -60,6 +60,29 @@ immediate(() => {
   })
 })
 
+immediate(() => {
+  const dispatcher = makeMessageDispatcher({
+    from: "popup",
+    to: "extension-service-worker",
+    requestHandlers: {
+      testMicrophone() {
+        whisperHost.ready({requestFocus: true})
+      }
+    }
+  })
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    return dispatcher.dispatch({
+      message,
+      sender,
+      sendResponse(res) {
+        if (res.error) res.error = makeSerializableError(res.error)
+        sendResponse(res)
+      }
+    })
+  })
+})
+
 
 
 //extension commands
