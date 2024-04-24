@@ -6,17 +6,16 @@ class AudioCaptureProcessor extends AudioWorkletProcessor {
   }
   onMessage(message) {
     if (message.method == "start") {
+      if (this.session) this.session.finish()
       this.session = makeSession(message.sessionId, message.chunkSize, this.port)
     }
-    else if (message.method == "finish") {
+    else if (message.method == "finish" && message.sessionId == this.session.sessionId) {
       this.session.finish()
       this.session = null
     }
   }
   process(inputs) {
-    if (this.session) {
-      this.session.append(inputs[0][0])
-    }
+    if (this.session) this.session.append(inputs[0][0])
     return true
   }
 }
@@ -29,6 +28,7 @@ function makeSession(sessionId, chunkSize, port) {
   let chunk = new Float32Array(chunkSize)
   let index = 0
   return {
+    sessionId,
     append(samples) {
       const available = Math.min(samples.length, chunk.length - index)
       if (available) {

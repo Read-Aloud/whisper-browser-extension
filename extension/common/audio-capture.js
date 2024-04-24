@@ -26,7 +26,7 @@ function makeAudioCapture(audioContext, {chunkSize}) {
 
       return {
         finish() {
-          captureNode.port.postMessage({method: "finish"})
+          captureNode.port.postMessage({method: "finish", sessionId})
           sourceNode.disconnect(captureNode)
           return finishPromise
         }
