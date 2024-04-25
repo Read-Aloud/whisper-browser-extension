@@ -233,6 +233,8 @@ const contentScriptManager = immediate(() => {
 })
 
 async function makeContentScript(tabId) {
+  if (tabId == (await getCurrentTab()).id) return selfContentScript
+
   async function sendRequest(method, args) {
     const res = await chrome.tabs.sendMessage(tabId, {
       from: "whisper-host",
@@ -326,4 +328,50 @@ const keepAlive = immediate(() => {
       }
     }
   }
+})
+
+
+
+//UI
+
+const selfContentScript = {
+  async sendRequest(method, args) {
+  },
+  async notify(method, event) {
+    if (method == "onTranscribeEvent") {
+      const txtTranscription = document.querySelector("#test-transcribe textarea")
+      const lblStatus = document.querySelector("#test-transcribe .lbl-status")
+      switch (event.type) {
+        case "loading":
+          lblStatus.innerText = "Initializing..."
+          break
+        case "recording":
+          lblStatus.innerText = "Listening..."
+          break
+        case "transcribing":
+          lblStatus.innerText = "Transcribing..."
+          break
+        case "transcribed":
+          lblStatus.innerText = ""
+          insertAtCursor(txtTranscription, event.text)
+          break
+        case "error":
+          lblStatus.innerText = event.error.message
+          break
+        default:
+          lblStatus.innerText = JSON.stringify(event, null, 2)
+      }
+    }
+  }
+}
+
+
+
+document.addEventListener("DOMContentLoaded", function() {
+  const txtTranscription = document.querySelector("#test-transcribe textarea")
+  chrome.commands.getAll()
+    .then(commands => {
+      const {shortcut} = commands.find(x => x.name == "transcribe")
+      txtTranscription.placeholder = `Click here and press ${shortcut} to transcribe`
+    })
 })
