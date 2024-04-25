@@ -17,6 +17,20 @@
         text-decoration: underline;
         cursor: pointer;
       }
+      #test-microphone .bg-level {
+        position: relative;
+        width: 200px;
+        height: .5em;
+        background-color: #e0e0e0;
+      }
+      #test-microphone .fg-level {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 0%;
+        height: .25em;
+        background-color: #0e0;
+      }
       #test-transcribe .lbl-status {
         color: red;
       }
@@ -41,10 +55,13 @@
         </div>
       </div>
 
-      <div id="check-levels" class="mt-4">
-        <div class="level-indicator"></div>
-        <button type="button" class="btn btn-primary">Test Microphone</button>
-        <button type="button" class="btn btn-secondary d-none">Finished</button>
+      <div id="test-microphone" class="mt-4">
+        <div class="bg-level">
+          <div class="fg-level"></div>
+        </div>
+        <div class="mt-1">
+          <button type="button" class="btn btn-primary btn-test" data-finish="Finished">Test Microphone</button>
+        </div>
       </div>
 
       <div id="test-transcribe" style="margin-top: 5em">

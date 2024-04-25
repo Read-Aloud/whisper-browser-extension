@@ -270,23 +270,25 @@ async function makeContentScript(tabId) {
 
 //recorder
 
-const getRecorder = lazy(() => {
-  const context = new AudioContext({sampleRate: 16000})
-  const capture = makeAudioCapture(context, {chunkSize: 16000})
-  const microphone = makeSharedResource({
-    create() {
-      const switcher = switchToCurrentTab({delay: 3000})
-      return navigator.mediaDevices.getUserMedia({audio: true})
-        .finally(() => switcher.restore())
-    },
-    destroy(resource) {
-      resource
-        .then(stream => stream.getTracks().forEach(track => track.stop()))
-        .catch(err => "ignore")
-    },
-    keepAliveDuration: 10000
-  })
+const microphone = makeSharedResource({
+  create() {
+    const switcher = switchToCurrentTab({delay: 3000})
+    return navigator.mediaDevices.getUserMedia({audio: true})
+      .finally(() => switcher.restore())
+  },
+  destroy(resource) {
+    resource
+      .then(stream => stream.getTracks().forEach(track => track.stop()))
+      .catch(err => "ignore")
+  },
+  keepAliveDuration: 10000
+})
 
+const getAudioContext = lazy(() => new AudioContext({sampleRate: 16000}))
+
+const getRecorder = lazy(() => {
+  const context = getAudioContext()
+  const capture = makeAudioCapture(context, {chunkSize: 16000})
   return {
     async start() {
       const handle = microphone.acquire()
@@ -368,6 +370,39 @@ const selfContentScript = {
 
 
 document.addEventListener("DOMContentLoaded", function() {
+  //test microphone
+  const fgLevel = document.querySelector("#test-microphone .fg-level")
+  const btnTest = document.querySelector("#test-microphone .btn-test")
+  let session
+  btnTest.addEventListener("click", async function() {
+    if (session) {
+      btnTest.innerText = session.originalButtonText
+      session.stop()
+      session = null
+    }
+    else {
+      const handle = microphone.acquire()
+      const stream = await handle.resource
+      const analyzer = makeMicrophoneLevelAnalyzer({
+        sourceNode: getAudioContext().createMediaStreamSource(stream),
+        refreshInterval: 100,
+        callback(level) {
+          fgLevel.style.width = (level * 100) + '%'
+        }
+      })
+      session = {
+        originalButtonText: btnTest.innerText,
+        stop() {
+          analyzer.stop()
+          handle.release()
+          fgLevel.style.width = ''
+        }
+      }
+      btnTest.innerText = btnTest.getAttribute("data-finish")
+    }
+  })
+
+  //test transcribe
   const txtTranscription = document.querySelector("#test-transcribe textarea")
   chrome.commands.getAll()
     .then(commands => {

@@ -239,3 +239,28 @@ function insertAtCursor(myField, myValue) {
     myField.value += myValue;
   }
 }
+
+/**
+ * sampleRate=16000, fftSize=32 -> frequencyResolution=500Hz per bin
+ * We take the first 6 bins 0-3kHz which covers the essential components of speech
+ */
+function makeMicrophoneLevelAnalyzer({sourceNode, refreshInterval, callback}) {
+  const analyser = sourceNode.context.createAnalyser()
+  analyser.fftSize = 32
+  analyser.smoothingTimeConstant = 0
+
+  const data = new Uint8Array(analyser.frequencyBinCount)
+  const refresh = function() {
+    analyser.getByteFrequencyData(data)
+    callback((data[0] + data[1] + data[2] + data[3] + data[4] + data[5]) /6 /255)
+  }
+
+  sourceNode.connect(analyser)
+  const timer = setInterval(refresh, refreshInterval)
+  return {
+    stop() {
+      clearInterval(timer)
+      sourceNode.disconnect(analyser)
+    }
+  }
+}
