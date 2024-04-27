@@ -70,11 +70,11 @@ immediate(() => {
     to: "whisper-host",
     requestHandlers: {
       async areYouThere({requestFocus}) {
-        if (requestFocus) await switchToCurrentTab({delay: 0})
+        if (requestFocus) await switchToTab(await getCurrentTab())
         return true
       },
       transcribe({tabId}) {
-        transcribeStateMachine.trigger("next", tabId)
+        transcribeStateMachine.next(tabId)
       }
     }
   })
@@ -103,34 +103,30 @@ immediate(() => {
 
 //transcribe state machine
 
-const transcribeStateMachine = immediate(() => {
-  let currentTranscription = null
+const transcribeStateMachine = new rxjs.Subject()
 
-  const sm = makeStateMachine({
-    IDLE: {
-      next(tabId) {
+transcribeStateMachine
+  .pipe(
+    rxjs.switchScan((current, tabId) => {
+      if (current) {
+        current.finish()
+        return rxjs.of(null)
+      }
+      else {
         if (tabId) {
-          const tran = currentTranscription = makeTranscription(tabId)
-          tran.finishPromise.finally(() => tran == currentTranscription && sm.trigger("onFinish"))
-          return "TRANSCRIBING"
+          current = makeTranscription(tabId)
+          return rxjs.of(current)
+            .pipe(
+              rxjs.concatWith(current.finishPromise.then(() => null, err => null))
+            )
+        }
+        else {
+          return rxjs.EMPTY
         }
       }
-    },
-    TRANSCRIBING: {
-      next() {
-        currentTranscription.finish()
-        currentTranscription = null
-        return "IDLE"
-      },
-      onFinish() {
-        currentTranscription = null
-        return "IDLE"
-      }
-    },
-  })
-
-  return sm
-})
+    }, null)
+  )
+  .subscribe()
 
 
 
@@ -270,19 +266,39 @@ async function makeContentScript(tabId) {
 
 //recorder
 
-const microphone = makeSharedResource({
-  create() {
-    const switcher = switchToCurrentTab({delay: 3000})
+const microphoneObservable = rxjs.defer(() => {
+    const sub = rxjs.timer(3000)
+      .pipe(
+        rxjs.concatMap(() => Promise.all([
+          getCurrentTab(),
+          chrome.tabs.query({active: true, lastFocusedWindow: true}).then(tabs => tabs[0])
+        ])),
+        rxjs.switchMap(([currentTab, activeTab]) =>
+          rxjs.from(switchToTab(currentTab))
+            .pipe(
+              rxjs.concatWith(rxjs.NEVER),
+              rxjs.finalize(() => {
+                if (activeTab) switchToTab(activeTab).catch(console.error)
+              })
+            )
+        )
+      )
+      .subscribe()
     return navigator.mediaDevices.getUserMedia({audio: true})
-      .finally(() => switcher.restore())
-  },
-  destroy(resource) {
-    resource
-      .then(stream => stream.getTracks().forEach(track => track.stop()))
-      .catch(err => "ignore")
-  },
-  keepAliveDuration: 10000
-})
+      .finally(() => sub.unsubscribe())
+  })
+  .pipe(
+    rxjs.switchMap(stream => rxjs.of(stream)
+      .pipe(
+        rxjs.concatWith(rxjs.NEVER),
+        rxjs.finalize(() => stream.getTracks().forEach(track => track.stop()))
+      )
+    ),
+    rxjs.share({
+      connector: () => new rxjs.ReplaySubject(1),
+      resetOnRefCountZero: () => rxjs.timer(10000)
+    })
+  )
 
 const getAudioContext = lazy(() => new AudioContext({sampleRate: 16000}))
 
@@ -290,22 +306,24 @@ const getRecorder = lazy(() => {
   const context = getAudioContext()
   const capture = makeAudioCapture(context, {chunkSize: 16000})
   return {
-    async start() {
-      const handle = microphone.acquire()
-      try {
-        const stream = await handle.resource
-        const session = await capture.start(context.createMediaStreamSource(stream))
-        return {
-          finish() {
-            handle.release()
-            return session.finish()
-          }
-        }
-      }
-      catch (err) {
-        handle.release()
-        throw err
-      }
+    start() {
+      return new Promise((fulfill, reject) => {
+        const sub = microphoneObservable
+          .pipe(
+            rxjs.concatMap(stream => capture.start(context.createMediaStreamSource(stream)))
+          )
+          .subscribe({
+            next(session) {
+              fulfill({
+                finish() {
+                  sub.unsubscribe()
+                  return session.finish()
+                }
+              })
+            },
+            error: reject
+          })
+      })
     }
   }
 })
@@ -382,8 +400,7 @@ document.addEventListener("DOMContentLoaded", function() {
       session = null
     }
     else {
-      const handle = microphone.acquire()
-      const stream = await handle.resource
+      const stream = await navigator.mediaDevices.getUserMedia({audio: true})
       const analyzer = makeMicrophoneLevelAnalyzer({
         sourceNode: getAudioContext().createMediaStreamSource(stream),
         refreshInterval: 100,
@@ -395,7 +412,7 @@ document.addEventListener("DOMContentLoaded", function() {
         originalButtonText: btnTest.innerText,
         stop() {
           analyzer.stop()
-          handle.release()
+          stream.getTracks().forEach(track => track.stop())
           fgLevel.style.width = ''
         }
       }

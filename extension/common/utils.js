@@ -98,82 +98,6 @@ function makeMessageDispatcher({ from, to, requestHandlers }) {
   }
 }
 
-function makeStateMachine(states) {
-  let currentStateName = "IDLE"
-  if (states[currentStateName].onTransitionIn) states[currentStateName].onTransitionIn()
-  let lock = 0
-  return {
-    trigger(eventName, ...args) {
-      if (lock) throw new Error("Cannot trigger an event synchronously while inside an event handler")
-      lock++;
-      try {
-        const currentState = states[currentStateName]
-        if (!(eventName in currentState)) throw new Error("Missing handler " + currentStateName + "." + eventName)
-        const nextStateName = currentState[eventName](...args)
-        if (nextStateName) {
-          if (!(nextStateName in states)) throw new Error("Missing state " + nextStateName)
-          currentStateName = nextStateName
-          if (states[currentStateName].onTransitionIn) states[currentStateName].onTransitionIn()
-        }
-      }
-      finally {
-        lock--;
-      }
-    },
-    getState() {
-      return currentStateName;
-    }
-  }
-}
-
-function makeSharedResource({create, destroy, keepAliveDuration}) {
-  let resource
-  let refCount = 0
-  const sm = makeStateMachine({
-    IDLE: {
-      acquire() {
-        resource = create()
-        refCount++
-        return "ACQUIRED"
-      }
-    },
-    ACQUIRED: {
-      acquire() {
-        refCount++
-      },
-      release() {
-        refCount--
-        if (refCount == 0) return "KEEPALIVE"
-      }
-    },
-    KEEPALIVE: {
-      onTransitionIn() {
-        this.timer = setTimeout(() => sm.trigger("onTimeout"), keepAliveDuration)
-      },
-      onTimeout() {
-        destroy(resource)
-        return "IDLE"
-      },
-      acquire() {
-        clearTimeout(this.timer)
-        refCount++
-        return "ACQUIRED"
-      }
-    }
-  })
-  return {
-    acquire() {
-      sm.trigger("acquire")
-      return {
-        resource,
-        release() {
-          sm.trigger("release")
-        }
-      }
-    }
-  }
-}
-
 const getCurrentTab = lazy(() => chrome.tabs.getCurrent())
 
 function switchToTab(tab) {
@@ -181,22 +105,6 @@ function switchToTab(tab) {
     chrome.tabs.update(tab.id, {active: true}),
     chrome.windows.update(tab.windowId, {focused: true})
   ])
-}
-
-function switchToCurrentTab({delay}) {
-  const prevTabPromise = chrome.tabs.query({active: true, lastFocusedWindow: true}).then(tabs => tabs[0])
-  let switchedPromise
-  const timer = setTimeout(() => switchedPromise = getCurrentTab().then(switchToTab), delay)
-  return {
-    restore() {
-      clearTimeout(timer)
-      if (switchedPromise) {
-        switchedPromise
-          .then(() => prevTabPromise.then(prevTab => prevTab && switchToTab(prevTab)))
-          .catch(console.error)
-      }
-    }
-  }
 }
 
 function makeSemaphore(count) {
