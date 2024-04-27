@@ -63,8 +63,13 @@ function makeSession() {
   return {
     completePromise: completePromise.promise,
     prepare() {
-      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement))
+      if (!(
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.hasAttribute("contenteditable")
+      )) {
         throw {name: "NoTargetException", message: "Please select a textbox to receive transcription"}
+      }
     },
     onEvent(event, toast) {
       switch (event.type) {

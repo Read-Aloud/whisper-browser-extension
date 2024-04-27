@@ -137,15 +137,35 @@ function makeExposedPromise() {
 }
 
 function insertAtCursor(myField, myValue) {
-  if (myField.selectionStart || myField.selectionStart == '0') {
+  if (typeof myField.selectionStart == "number") {
     var startPos = myField.selectionStart;
     var endPos = myField.selectionEnd;
-    myField.value = myField.value.substring(0, startPos) + myValue + myField.value.substring(endPos, myField.value.length);
+    myField.value = myField.value.slice(0, startPos) + myValue + myField.value.slice(endPos)
     myField.selectionStart = myField.selectionEnd = startPos + myValue.length;
   }
-  else {
-    myField.value += myValue;
+  else if (myField.hasAttribute("contenteditable")) {
+    const selection = document.getSelection()
+    const {focusNode, focusOffset} = selection
+    if (focusNode && focusNode.nodeType == 3 && isDescendant(focusNode, myField)) {
+      focusNode.nodeValue = focusNode.nodeValue.slice(0, focusOffset) + myValue + focusNode.nodeValue.slice(focusOffset)
+      selection.setPosition(focusNode, focusOffset + myValue.length)
+    }
+    else {
+      myField.appendChild(document.createTextNode(myValue))
+    }
   }
+  else {
+    console.error("Could not insert text into", myField)
+  }
+}
+
+function isDescendant(child, parent) {
+  let node = child.parentNode
+  while (node) {
+    if (node == parent) return true
+    node = node.parentNode
+  }
+  return false
 }
 
 /**
