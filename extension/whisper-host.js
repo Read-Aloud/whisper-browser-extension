@@ -373,6 +373,7 @@ document.addEventListener("DOMContentLoaded", function() {
   //test microphone
   const fgLevel = document.querySelector("#test-microphone .fg-level")
   const btnTest = document.querySelector("#test-microphone .btn-test")
+  const btnChange = document.querySelector("#test-microphone .btn-change")
   let session
   btnTest.addEventListener("click", async function() {
     if (session) {
@@ -400,6 +401,10 @@ document.addEventListener("DOMContentLoaded", function() {
       }
       btnTest.innerText = btnTest.getAttribute("data-finish")
     }
+  })
+  btnChange.addEventListener("click", function() {
+    chrome.tabs.create({url: "chrome://settings/content/microphone"})
+      .catch(err => alert(err.message))
   })
 
   //test transcribe

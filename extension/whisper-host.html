@@ -19,7 +19,7 @@
       }
       #test-microphone .bg-level {
         position: relative;
-        width: 200px;
+        width: 350px;
         height: .5em;
         background-color: #e0e0e0;
       }
@@ -27,7 +27,7 @@
         position: absolute;
         left: 0;
         bottom: 0;
-        width: 0%;
+        width: 1%;
         height: .25em;
         background-color: #0e0;
       }
@@ -44,23 +44,16 @@
     <iframe src="https://ttstool.com/onnx/index.html" allow="cross-origin-isolated" style="display: none"></iframe>
 
     <div class="container">
-      <h2 class="mt-5">Whisker Settings</h2>
+      <h2 class="mt-5">Whisker: Your AI Transcriber</h2>
 
-      <div id="select-microphone" class="mt-4">
-        <div>
-          Microphone: <strong>Default</strong> <span class="link btn-change">Change</span>
+      <div id="test-microphone" class="mt-5">
+        <div class="d-flex align-items-center">
+          <div class="text-muted">🎙️</div>
+          <div class="ms-2 bg-level"><div class="fg-level"></div></div>
         </div>
-        <div class="d-none">
-          Microphone: <select></select>
-        </div>
-      </div>
-
-      <div id="test-microphone" class="mt-4">
-        <div class="bg-level">
-          <div class="fg-level"></div>
-        </div>
-        <div class="mt-1">
+        <div class="mt-3">
           <button type="button" class="btn btn-primary btn-test" data-finish="Finished">Test Microphone</button>
+          <button type="button" class="btn btn-secondary btn-change">Browser Microphone Settings</button>
         </div>
       </div>
 
