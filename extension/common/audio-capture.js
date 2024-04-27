@@ -3,30 +3,26 @@ const audioCaptureWorkletUrl = document.currentScript.src.replace("audio-capture
 
 
 function makeAudioCapture(audioContext, {chunkSize}) {
-  const captureNodePromise = audioContext.audioWorklet.addModule(audioCaptureWorkletUrl)
-    .then(() => new AudioWorkletNode(audioContext, "audio-capture-processor"))
+  const readyPromise = audioContext.audioWorklet.addModule(audioCaptureWorkletUrl)
 
   return {
     async start(sourceNode) {
-      const sessionId = Math.random()
-      const captureNode = await captureNodePromise
+      await readyPromise
+      const captureNode = new AudioWorkletNode(audioContext, "audio-capture-processor", {processorOptions: {chunkSize}})
       sourceNode.connect(captureNode)
-      captureNode.port.postMessage({method: "start", sessionId, chunkSize})
 
       const finishPromise = new Promise(fulfill => {
         const chunks = []
         captureNode.port.onmessage = function(event) {
           const message = event.data
-          if (message.sessionId == sessionId) {
-            if (message.method == "onChunk") chunks.push(message.chunk)
-            else if (message.method == "onFinish") fulfill(concat(chunks))
-          }
+          //console.debug(message)
+          if (message.method == "onChunk") chunks.push(message.chunk)
+          else if (message.method == "onFinish") fulfill(concat(chunks))
         }
       })
 
       return {
         finish() {
-          captureNode.port.postMessage({method: "finish", sessionId})
           sourceNode.disconnect(captureNode)
           return finishPromise
         }

@@ -2,21 +2,32 @@
 class AudioCaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super(options)
-    this.port.onmessage = event => this.onMessage(event.data)
-  }
-  onMessage(message) {
-    if (message.method == "start") {
-      if (this.session) this.session.finish()
-      this.session = makeSession(message.sessionId, message.chunkSize, this.port)
-    }
-    else if (message.method == "finish" && message.sessionId == this.session.sessionId) {
-      this.session.finish()
-      this.session = null
-    }
+    this.session = makeSession(options.processorOptions.chunkSize || 48000, this.port)
+    this.state = "IDLE"
   }
   process(inputs) {
-    if (this.session) this.session.append(inputs[0][0])
-    return true
+    /**
+     * MDN
+     * The number of inputs and thus the length of that array is fixed at the construction of the node (see AudioWorkletNode).
+     * If there is no active node connected to the n-th input of the node, inputs[n] will be an empty array (zero input channels available).
+     */
+    const channels = inputs[0]
+    if (this.state == "IDLE") {
+      if (channels.length) {
+        this.session.append(channels[0])
+        this.state = "CAPTURING"
+      }
+    }
+    else if (this.state == "CAPTURING") {
+      if (channels.length) {
+        this.session.append(channels[0])
+      }
+      else {
+        this.session.finish()
+        this.state = "FINISHED"
+      }
+    }
+    return this.state != "FINISHED"
   }
 }
 
@@ -24,11 +35,10 @@ registerProcessor("audio-capture-processor", AudioCaptureProcessor)
 
 
 
-function makeSession(sessionId, chunkSize, port) {
+function makeSession(chunkSize, port) {
   let chunk = new Float32Array(chunkSize)
   let index = 0
   return {
-    sessionId,
     append(samples) {
       const available = Math.min(samples.length, chunk.length - index)
       if (available) {
@@ -36,7 +46,7 @@ function makeSession(sessionId, chunkSize, port) {
         index += available
       }
       if (index == chunk.length) {
-        port.postMessage({sessionId, method: "onChunk", chunk}, [chunk.buffer])
+        port.postMessage({method: "onChunk", chunk}, [chunk.buffer])
         chunk = new Float32Array(chunkSize)
         index = 0
       }
@@ -48,9 +58,9 @@ function makeSession(sessionId, chunkSize, port) {
     },
     finish() {
       if (index) {
-        port.postMessage({sessionId, method: "onChunk", chunk: chunk.subarray(0, index)}, [chunk.buffer])
+        port.postMessage({method: "onChunk", chunk: chunk.subarray(0, index)}, [chunk.buffer])
       }
-      port.postMessage({sessionId, method: "onFinish"})
+      port.postMessage({method: "onFinish"})
     }
   }
 }

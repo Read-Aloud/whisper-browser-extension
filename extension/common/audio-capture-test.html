@@ -76,23 +76,31 @@
       const btnCapture = document.getElementById("btn-capture")
       const audResult = document.getElementById("aud-result")
 
-      const audioCapture = makeAudioCapture()
-      let capture
+      const audioContext = new AudioContext({sampleRate: 16000})
+      const audioCapture = makeAudioCapture(audioContext, {chunkSize: 16000})
+      let session
 
       btnCapture.addEventListener("click", async function() {
-        if (!capture) {
-          capture = await audioCapture.start()
+        if (!session) {
+          const stream = await navigator.mediaDevices.getUserMedia({audio: true})
+          const capture = await audioCapture.start(audioContext.createMediaStreamSource(stream))
+          session = {
+            finish() {
+              stream.getTracks().forEach(track => track.stop())
+              return capture.finish()
+            }
+          }
           btnCapture.innerText = "Finish"
         }
         else {
-          const result = await capture.finish()
+          const result = await session.finish()
           const wavBlob = makeWav([{
             pcmData: {samples: result, numChannels: 1, sampleRate: 16000},
             appendSilenceSeconds: 0
           }])
           audResult.src = URL.createObjectURL(wavBlob)
 
-          capture = null
+          session = null
           btnCapture.innerText = "Start"
         }
       })
